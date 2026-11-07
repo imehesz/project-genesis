@@ -1,3 +1,4 @@
+import { asset } from '../asset.ts';
 import { useEffect, useRef } from 'react';
 import { useUi } from '../store/gameStore.ts';
 import { GameCanvas } from './GameCanvas.tsx';
@@ -43,7 +44,7 @@ export function App() {
         view={screen.name === 'sandbox' ? 'sandbox' : screen.name === 'surface' ? 'surface' : screen.name === 'battle' ? 'battle' : screen.name === 'ground' ? 'ground' : STRATEGIC.has(screen.name) ? 'galaxy' : null}
         colonyId={screen.name === 'surface' ? screen.colonyId : undefined}
       />
-      <audio ref={music} src="audio/menu-theme.m4a" loop preload="auto" />
+      <audio ref={music} src={asset('audio/menu-theme.m4a')} loop preload="auto" />
       <div className="ui-layer">
         {screen.name === 'menu' && <MainMenu />}
         {screen.name === 'cutscene' && (

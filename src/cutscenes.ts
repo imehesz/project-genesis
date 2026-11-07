@@ -1,3 +1,4 @@
+import { asset } from './asset.ts';
 /**
  * Cutscene registry. Drop the video file at public/cutscenes/<id>.mp4 and it plays;
  * until then a placeholder card is shown in its place.
@@ -17,4 +18,4 @@ export const CUTSCENES: Record<string, CutsceneDef> = {
   },
 };
 
-export const cutsceneSrc = (id: string) => `cutscenes/${id}.mp4`;
+export const cutsceneSrc = (id: string) => asset(`cutscenes/${id}.mp4`);

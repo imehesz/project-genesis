@@ -1,4 +1,5 @@
 import { engine, useUi } from './store/gameStore.ts';
+import * as E from './engine/index.ts';
 import { addShips, applyCommand, createInitialState, resolveEncounters } from './engine/index.ts';
 
 /**
@@ -7,12 +8,13 @@ import { addShips, applyCommand, createInitialState, resolveEncounters } from '.
  */
 export function runDevScenario() {
   if (!import.meta.env.DEV) return;
-  (window as unknown as Record<string, unknown>).__pg = { engine, useUi }; // poke at it from devtools
+  Object.assign(((window as unknown as Record<string, object>).__pg ??= {}), { engine, useUi, E }); // poke at it from devtools / demo recorder
   const scenario = new URLSearchParams(location.search).get('scenario');
   if (scenario === 'ground') {
     let s = applyCommand(createInitialState(), { type: 'NEW_CAMPAIGN', seed: 4242, faction: 'terran' });
     const target = Object.values(s.colonies).find((c) => c.faction === 'saurian')!;
-    s = addShips(s, 'terran', target.systemId, 'transport', 2);
+    const transports = Math.max(1, Number(new URLSearchParams(location.search).get('transports')) || 2);
+    s = addShips(s, 'terran', target.systemId, 'transport', transports);
     s = { ...s, report: { turn: 1, events: [] } };
     const fleet = Object.values(s.fleets).find((f) => f.faction === 'terran' && f.ships.transport)!;
     s = applyCommand(s, { type: 'INVADE', fleetId: fleet.id, planetId: target.planetId });

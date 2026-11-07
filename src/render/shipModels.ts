@@ -1,3 +1,4 @@
+import { asset } from '../asset.ts';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
@@ -27,7 +28,7 @@ export function loadShipModels(): Promise<Partial<Record<ShipId, THREE.Object3D>
   loading = Promise.all(
     ids.map((id) =>
       loader
-        .loadAsync(`models/${id}.glb`)
+        .loadAsync(asset(`models/${id}.glb`))
         .then((g) => [id, normalize(g.scene, CONFIG[id].yaw)] as const)
         .catch(() => [id, null] as const),
     ),

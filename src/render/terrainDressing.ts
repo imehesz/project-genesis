@@ -1,3 +1,4 @@
+import { asset } from '../asset.ts';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { findPath, footprint, type Colony, type PlanetType, type Surface } from '../engine/index.ts';
@@ -84,7 +85,7 @@ const texCache = new Map<string, THREE.Texture>();
 function tex(name: string): THREE.Texture {
   let t = texCache.get(name);
   if (!t) {
-    t = new THREE.TextureLoader().load(`textures/terrain/${name}.webp`);
+    t = new THREE.TextureLoader().load(asset(`textures/terrain/${name}.webp`));
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 4;
@@ -237,7 +238,7 @@ const propCache = new Map<string, Promise<THREE.Object3D | null>>();
 function loadProp(name: string): Promise<THREE.Object3D | null> {
   let p = propCache.get(name);
   if (!p) {
-    p = new GLTFLoader().loadAsync(`models/nature/${name}.glb`).then((g) => {
+    p = new GLTFLoader().loadAsync(asset(`models/nature/${name}.glb`)).then((g) => {
       g.scene.traverse((o) => {
         const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
         if (m && PALETTE[m.name]) { m.color.set(PALETTE[m.name]); m.roughness = 0.9; m.metalness = 0; }

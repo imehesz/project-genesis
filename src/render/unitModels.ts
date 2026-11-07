@@ -1,3 +1,4 @@
+import { asset } from '../asset.ts';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
@@ -17,7 +18,7 @@ export function loadUnitModels(): Promise<Partial<Record<UnitId, THREE.Object3D>
   const ids = Object.keys(SIZE) as UnitId[];
   loading = Promise.all(
     ids.map((id) =>
-      loader.loadAsync(`models/units/${id}.glb`).then((g) => [id, normalize(g.scene, SIZE[id])] as const).catch(() => [id, null] as const),
+      loader.loadAsync(asset(`models/units/${id}.glb`)).then((g) => [id, normalize(g.scene, SIZE[id])] as const).catch(() => [id, null] as const),
     ),
   ).then((p) => Object.fromEntries(p.filter(([, m]) => m)) as Partial<Record<UnitId, THREE.Object3D>>);
   return loading;

@@ -11,7 +11,8 @@ export function GroundHud() {
   const me = state.campaign?.playerFaction;
   const sel = useUi((s) => s.groundSelection);
   const go = useUi((s) => s.go);
-  const [paused, setPaused] = useState(false);
+  // dev/demo hook: ?scenario=ground&paused=1 opens the invasion paused
+  const [paused, setPaused] = useState(() => import.meta.env.DEV && new URLSearchParams(location.search).get('paused') === '1');
   const [confirm, setConfirm] = useState(false);
   const over = !!ground?.over;
 
