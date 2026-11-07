@@ -1,0 +1,4 @@
+Terrain textures from Poly Haven (https://polyhaven.com), licensed CC0 1.0 (public domain).
+Downscaled to 512x512 WebP. Sources: sparse_grass, forest_ground_04, rock_face_03, coast_sand_01, leafy_grass,
+red_sand, dry_ground_rocks, sandstone_cracks, burned_ground_01, dark_rock, dark_rock_02, snow_02,
+snow_field_aerial, ground_grey, rocky_terrain_02, stony_dirt_path.
