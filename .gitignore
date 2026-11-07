@@ -2,3 +2,5 @@ node_modules/
 dist/
 requirements/
 *:Zone.Identifier
+rsync_exclude.txt
+deployScriptPROD.sh
