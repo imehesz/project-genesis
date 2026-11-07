@@ -18,7 +18,6 @@ export interface GroundLink {
 }
 
 const DRAG_PX = 6;
-const PAN_SPEED = 40;
 
 interface UnitView {
   id: number;
@@ -46,7 +45,6 @@ export class GroundBattleView implements View {
   backdrop: boolean;
   fog: View['fog'];
   bloom = 0.3;
-  controlScheme = 'rts' as const;
   private planet: PlanetView;
   private engine: Engine;
   private link: GroundLink;
@@ -254,7 +252,8 @@ export class GroundBattleView implements View {
 
   attach(canvas: HTMLCanvasElement, camera: THREE.PerspectiveCamera) {
     let start: { x: number; y: number } | null = null;
-    const down = (e: PointerEvent) => { if (e.button === 0) start = { x: e.clientX, y: e.clientY }; };
+    // Alt + left-drag rotates the camera (Stage), so it never starts a selection box
+    const down = (e: PointerEvent) => { if (e.button === 0 && !e.altKey) start = { x: e.clientX, y: e.clientY }; };
     const move = (e: PointerEvent) => {
       if (!start) return;
       const w = Math.abs(e.clientX - start.x), h = Math.abs(e.clientY - start.y);
@@ -312,19 +311,8 @@ export class GroundBattleView implements View {
   // ------------------------------------------------------------ frame
 
   update(ctx: FrameContext) {
-    const { dt, camera, controls } = ctx;
+    const { dt } = ctx;
     this.planet.update(ctx);
-    // keyboard pan (camera-relative, on the ground plane)
-    const k = this.keys;
-    const fx = (k.has('d') || k.has('ArrowRight') ? 1 : 0) - (k.has('a') || k.has('ArrowLeft') ? 1 : 0);
-    const fz = (k.has('s') || k.has('ArrowDown') ? 1 : 0) - (k.has('w') || k.has('ArrowUp') ? 1 : 0);
-    if (fx || fz) {
-      const fwd = new THREE.Vector3().subVectors(controls.target, camera.position).setY(0).normalize();
-      const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
-      const d = right.multiplyScalar(fx).addScaledVector(fwd, -fz).multiplyScalar(PAN_SPEED * dt);
-      controls.target.add(d);
-      camera.position.add(d);
-    }
 
     const g = this.engine.getState().ground;
     const byId = new Map((g?.units ?? []).map((u) => [u.id, u]));

@@ -57,7 +57,7 @@ export function GroundHud() {
           <aside className="panel battle-unit">
             {mineSel.length ? <Selection units={mineSel} /> : (
               <p className="panel-text">
-                <b>Left-drag</b> to select troops · <b>right-click</b> ground to move, an enemy to attack · <b>WASD</b> pans, <b>middle-drag</b> rotates · <b>Ctrl+A</b> selects all · <b>Space</b> pauses
+                <b>Left-drag</b> to select troops · <b>right-click</b> ground to move, an enemy to attack · <b>middle-drag</b> pans, <b>Alt</b>+drag rotates · <b>Ctrl+A</b> all · <b>Space</b> pause · <b>F1</b> controls
               </p>
             )}
           </aside>

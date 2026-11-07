@@ -390,3 +390,12 @@ button.planet-portrait:hover img { filter: brightness(1.15); }
 .gbar i { display: block; height: 100%; width: 100%; background: var(--fc); box-shadow: 0 0 6px var(--fc); transition: width 0.2s; }
 .ground-hud .panel-text b { color: var(--ink); }
 .invade-btn { border-color: rgba(255, 107, 107, 0.6); }
+
+/* ---------- controls help ---------- */
+.controls-help { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(2, 4, 10, 0.5); z-index: 20; animation: fade 0.25s ease both; }
+.controls-card { width: min(520px, calc(100vw - 32px)); padding: 20px 22px; display: flex; flex-direction: column; gap: 12px; }
+.controls-card table { border-collapse: collapse; font-size: 0.86rem; }
+.controls-card td { padding: 5px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); color: var(--ink-dim); }
+.controls-card td:first-child { white-space: nowrap; width: 1%; }
+.controls-card kbd { font-family: var(--font-display); font-weight: 600; letter-spacing: 0.06em; color: var(--ink); background: rgba(95, 212, 255, 0.1); border: 1px solid rgba(95, 212, 255, 0.35); padding: 2px 8px; }
+.controls-card .btn { align-self: center; text-align: center; }

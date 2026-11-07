@@ -60,7 +60,7 @@ export function BattleHud() {
         <>
           <aside className="panel battle-unit">
             {unit && unit.faction === me ? <UnitCard u={unit} battle={battle} /> : (
-              <p className="panel-text">Click one of your ships. Green cells: where it can move. Red rings: enemies it can hit. Each ship moves once and fires once per round.</p>
+              <p className="panel-text">Click one of your ships. Green cells: where it can move. Red rings: enemies it can hit. Each ship moves once and fires once per round. Middle-drag pans, Alt+drag rotates, F1 for all controls.</p>
             )}
           </aside>
           <div className="battle-actions">

@@ -98,9 +98,27 @@ clearing around the settlement and kept off roads and buildings. Kenney's colour
 factor, so props are repainted by material name (`PALETTE`, plus per-biome `palette` overrides). Purely visual:
 props don't block units.
 
+## Controls (every 3D view)
+
+Modelled on Beyond All Reason's defaults (its `common/configs/keybind_defaults.json`: arrows pan, PgUp/PgDn zoom,
+Alt = rotate modifier, Ctrl = tilt modifier) and the engine's mouse camera:
+
+| Input | Action |
+|---|---|
+| Left click / left-drag | Select / box-select (never moves the camera) |
+| Right click | Orders (move, attack, set course), cancel placement |
+| Middle-drag | Pan |
+| Alt + middle-drag (or Alt + left-drag) | Rotate |
+| Wheel / Ctrl + wheel | Zoom toward cursor / tilt |
+| Arrows or WASD · Alt + arrows · PgUp/PgDn | Pan · rotate/tilt · zoom |
+| F1 or ? | Controls reference (shown once automatically) |
+
+Implemented once in `src/render/Stage.ts`; views never touch the camera bindings.
+
 ## Credits
 
 Kenney Nature Kit (kenney.nl) and Poly Haven textures (polyhaven.com), both CC0. Licence files sit next to the assets.
+Music by Transparent Blue Lines - https://www.youtube.com/@transparentbluelines9882
 
 ## Cutscenes
 

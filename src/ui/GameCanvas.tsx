@@ -89,6 +89,7 @@ export function GameCanvas({ view, colonyId }: { view: ViewName; colonyId?: stri
   useEffect(() => {
     const stage = new Stage(canvasRef.current!, labelRef.current!);
     stageRef.current = stage;
+    if (import.meta.env.DEV) Object.assign(((window as unknown as Record<string, object>).__pg ??= {}), { stage });
     const fit = () => stage.resize(window.innerWidth, window.innerHeight);
     fit();
     window.addEventListener('resize', fit);

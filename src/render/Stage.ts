@@ -30,7 +30,7 @@ export class Stage {
   private renderer: THREE.WebGLRenderer;
   private labels = new CSS2DRenderer();
   private scene = new THREE.Scene();
-  private controls: OrbitControls;
+  readonly controls: OrbitControls;
   private composer: EffectComposer;
   private bloom: UnrealBloomPass;
   private clock = new THREE.Clock();
@@ -56,9 +56,15 @@ export class Stage {
     this.labels.domElement.className = 'label-layer';
     labelHost.appendChild(this.labels.domElement);
 
+    // One camera scheme for every view, modelled on Beyond All Reason's defaults:
+    // left = select, right = orders, middle-drag = pan, wheel = zoom (toward the cursor),
+    // Alt + middle/left-drag = rotate, Ctrl + wheel = tilt, arrows/WASD = pan, Alt+arrows = rotate, PgUp/PgDn = zoom.
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.06;
+    this.controls.screenSpacePanning = false; // middle-drag slides across the ground, map-style
+    this.controls.zoomToCursor = true;
+    this.applyMouseButtons(false);
     this.controls.addEventListener('start', () => {
       this.controls.autoRotate = false;
       this.fly = null;
@@ -82,6 +88,10 @@ export class Stage {
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
 
+    canvas.addEventListener('wheel', this.onWheel, { capture: true, passive: false });
+    window.addEventListener('keydown', this.onKeyDown);
+    window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('blur', this.onBlur);
     canvas.addEventListener('pointerdown', this.onDown);
     canvas.addEventListener('pointerup', this.onUp);
     canvas.addEventListener('pointermove', this.onMove);
@@ -89,6 +99,88 @@ export class Stage {
   }
 
   private onContext = (e: Event) => e.preventDefault();
+
+  private keys = new Set<string>();
+
+  private applyMouseButtons(rotate: boolean) {
+    const NONE = null as unknown as THREE.MOUSE;
+    this.controls.mouseButtons = rotate
+      ? { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: NONE }
+      : { LEFT: NONE, MIDDLE: THREE.MOUSE.PAN, RIGHT: NONE };
+  }
+
+  private typing = (e: KeyboardEvent) => {
+    const t = e.target as HTMLElement | null;
+    return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+  };
+
+  private onKeyDown = (e: KeyboardEvent) => {
+    if (this.typing(e)) return;
+    if (e.key === 'Alt') {
+      e.preventDefault(); // keep browsers from focusing their menu bar
+      this.applyMouseButtons(true);
+    }
+    this.keys.add(e.key.length === 1 ? e.key.toLowerCase() : e.key);
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown'].includes(e.key)) e.preventDefault();
+  };
+
+  private onKeyUp = (e: KeyboardEvent) => {
+    if (e.key === 'Alt') {
+      e.preventDefault();
+      this.applyMouseButtons(false);
+    }
+    this.keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key);
+  };
+
+  private onBlur = () => {
+    this.keys.clear();
+    this.applyMouseButtons(false);
+  };
+
+  /** Ctrl + wheel tilts (and must not zoom the browser page). */
+  private onWheel = (e: WheelEvent) => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    this.orbitBy(0, Math.sign(e.deltaY) * 0.06);
+  };
+
+  /** Rotate (azimuth) / tilt (polar) the camera around the orbit target. */
+  private orbitBy(dAzimuth: number, dPolar: number) {
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const sph = new THREE.Spherical().setFromVector3(offset);
+    sph.theta += dAzimuth;
+    sph.phi = Math.min(this.controls.maxPolarAngle, Math.max(0.12, sph.phi + dPolar));
+    offset.setFromSpherical(sph);
+    this.camera.position.copy(this.controls.target).add(offset);
+    this.fly = null;
+    this.controls.autoRotate = false;
+  }
+
+  /** Keyboard camera: arrows/WASD pan, Alt+arrows rotate, PgUp/PgDn zoom. */
+  private keyboardCamera(dt: number) {
+    const k = this.keys;
+    const right = (k.has('ArrowRight') || k.has('d') ? 1 : 0) - (k.has('ArrowLeft') || k.has('a') ? 1 : 0);
+    const fwd = (k.has('ArrowUp') || k.has('w') ? 1 : 0) - (k.has('ArrowDown') || k.has('s') ? 1 : 0);
+    const zoom = (k.has('PageDown') ? 1 : 0) - (k.has('PageUp') ? 1 : 0);
+    if (k.has('Control') || k.has('Meta')) return; // Ctrl+A etc. belong to the views
+    if (k.has('Alt')) {
+      if (right || fwd) this.orbitBy(-right * dt * 1.6, -fwd * dt * 1.0);
+    } else if (right || fwd) {
+      const dist = this.camera.position.distanceTo(this.controls.target);
+      const f = new THREE.Vector3().subVectors(this.controls.target, this.camera.position).setY(0).normalize();
+      const r = new THREE.Vector3(-f.z, 0, f.x);
+      const move = r.multiplyScalar(right).addScaledVector(f, fwd).multiplyScalar(dist * 0.9 * dt);
+      this.controls.target.add(move);
+      this.camera.position.add(move);
+      this.fly = null;
+    }
+    if (zoom) {
+      const offset = this.camera.position.clone().sub(this.controls.target);
+      const len = Math.min(this.controls.maxDistance, Math.max(this.controls.minDistance, offset.length() * (1 + zoom * dt * 1.5)));
+      this.camera.position.copy(this.controls.target).add(offset.setLength(len));
+    }
+  }
 
   setView(view: View | null) {
     if (this.view) {
@@ -105,9 +197,6 @@ export class Stage {
     if (!view) return;
     this.scene.add(view.root);
     this.detach = view.attach?.(this.canvas, this.camera) ?? null;
-    this.controls.mouseButtons = view.controlScheme === 'rts'
-      ? { LEFT: null as unknown as THREE.MOUSE, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN }
-      : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
     this.scene.fog = view.fog ?? null;
     this.bloom.strength = view.bloom ?? 0.9;
     for (const o of this.backdropObjects) o.visible = view.backdrop !== false;
@@ -166,6 +255,7 @@ export class Stage {
       this.camera.position.lerpVectors(this.fly.fromCam, this.fly.toCam, e);
       if (k >= 1) this.fly = null;
     }
+    this.keyboardCamera(dt);
     this.controls.update();
     this.view?.update({ t, dt, camera: this.camera, controls: this.controls });
     this.composer.render();
@@ -203,6 +293,10 @@ export class Stage {
     this.canvas.removeEventListener('pointerup', this.onUp);
     this.canvas.removeEventListener('pointermove', this.onMove);
     this.canvas.removeEventListener('contextmenu', this.onContext);
+    this.canvas.removeEventListener('wheel', this.onWheel, { capture: true });
+    window.removeEventListener('keydown', this.onKeyDown);
+    window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('blur', this.onBlur);
     this.labels.domElement.remove();
     this.controls.dispose();
     this.composer.dispose();

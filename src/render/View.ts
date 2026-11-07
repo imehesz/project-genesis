@@ -37,8 +37,6 @@ export interface View {
   fog?: THREE.Fog | THREE.FogExp2 | null;
   /** Bloom strength for this view (default 0.9: space glows, daylight scenes want less). */
   bloom?: number;
-  /** 'rts' frees the left button for selection: middle-drag rotates, right-drag pans. */
-  controlScheme?: 'orbit' | 'rts';
   /** Raw canvas access for views with their own pointer handling (e.g. drag-box selection). Returns a detach fn. */
   attach?(canvas: HTMLCanvasElement, camera: THREE.PerspectiveCamera): () => void;
 }

@@ -7,6 +7,7 @@ import { SandboxHud } from './SandboxHud.tsx';
 import { GalaxyHud } from './GalaxyHud.tsx';
 import { BattleHud } from './BattleHud.tsx';
 import { GroundHud } from './GroundHud.tsx';
+import { ControlsHelp } from './ControlsHelp.tsx';
 
 const STRATEGIC = new Set(['galaxy', 'colony', 'research', 'surface']);
 
@@ -52,6 +53,7 @@ export function App() {
         {STRATEGIC.has(screen.name) && <GalaxyHud />}
         {screen.name === 'battle' && <BattleHud />}
         {screen.name === 'ground' && <GroundHud />}
+        {(STRATEGIC.has(screen.name) || screen.name === 'battle' || screen.name === 'ground') && <ControlsHelp />}
       </div>
     </>
   );
