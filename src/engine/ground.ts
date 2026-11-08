@@ -11,6 +11,11 @@ import type { Surface } from './surface.ts';
 
 export const TICK_S = 0.05;
 const AGGRO = 3; // cells beyond weapon range at which idle units engage
+
+/** How far a unit notices enemies and moves in on them by itself (its "sight"), in surface cells. */
+export function sightOf(u: { range: number }): number {
+  return u.range + AGGRO;
+}
 const HOLD_TICKS = 400; // defenders hold their ground for the first 20 s
 const REPATH_TICKS = 10;
 

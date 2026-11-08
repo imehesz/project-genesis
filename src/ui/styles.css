@@ -399,3 +399,9 @@ button.planet-portrait:hover img { filter: brightness(1.15); }
 .controls-card td:first-child { white-space: nowrap; width: 1%; }
 .controls-card kbd { font-family: var(--font-display); font-weight: 600; letter-spacing: 0.06em; color: var(--ink); background: rgba(95, 212, 255, 0.1); border: 1px solid rgba(95, 212, 255, 0.35); padding: 2px 8px; }
 .controls-card .btn { align-self: center; text-align: center; }
+
+/* ground battle: legend for the range circles drawn around selected units */
+.rng-fire, .rng-sight { white-space: nowrap; }
+.rng-fire::before, .rng-sight::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+.rng-fire::before { border: 2px solid #ff6a45; }
+.rng-sight::before { border: 2px dashed #7fd8ff; }

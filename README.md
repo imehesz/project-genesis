@@ -9,6 +9,13 @@ A browser 4X space strategy game: turn-based galaxy map and space battles, real-
     npm run headless   # proves the engine runs without a browser
     npm run build
 
+## Deploy
+
+Production: https://mehesz.net/games/project-genesis/ (soft release). `npm run build` uses base `/games/project-genesis/`
+(`vite.config.ts`; override with `BASE_PATH=/x/ npm run build`); `npm run dev` stays at `/`. Upload the CONTENTS of
+`dist/`. All runtime file paths go through `src/asset.ts` (`import.meta.env.BASE_URL`), so never hard-code `models/...`
+or `/art/...` strings; CSS `url('/...')` is rewritten by Vite. Dev-only hooks (`?scenario=`, `window.__pg`) are off in prod.
+
 ## Layout
 
 | Folder          | Role |

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { engine, useGame, useUi } from '../store/gameStore.ts';
-import { FACTIONS, UNIT_DEFS, planetOf, type FactionId, type GroundUnit, type UnitId } from '../engine/index.ts';
+import { FACTIONS, UNIT_DEFS, planetOf, sightOf, type FactionId, type GroundUnit, type UnitId } from '../engine/index.ts';
 import { FACTION_STYLE } from '../theme.ts';
 import { Meter } from './common.tsx';
 
@@ -128,7 +128,7 @@ function Selection({ units }: { units: GroundUnit[] }) {
           <div key={k} className="kv">
             <div className="kv-row"><span>{UNIT_DEFS[k].name} ×{us.length}</span><b>{Math.round((hp / max) * 100)}%</b></div>
             <Meter value={hp} max={max} color={hp / max > 0.5 ? '#6fe0a0' : '#ff6b6b'} />
-            <div className="kv-hint">Damage {UNIT_DEFS[k].damage} · range {UNIT_DEFS[k].range} · speed {UNIT_DEFS[k].speed}</div>
+            <div className="kv-hint">Damage {UNIT_DEFS[k].damage} · <span className="rng-fire">range {UNIT_DEFS[k].range}</span> · <span className="rng-sight">sight {sightOf(UNIT_DEFS[k])}</span> · speed {UNIT_DEFS[k].speed}</div>
           </div>
         );
       })}
