@@ -17,6 +17,13 @@ export interface SurfaceLink {
   getStructure(): number | null;
   setStructure(id: number | null): void;
   subscribe(fn: () => void): () => void;
+  /** Placement rule override (planet missions); default: the colony's placeBlocker. */
+  blocker?(b: BuildingId, x: number, y: number): string | null;
+  /**
+   * Keep the clearing and roads from the first layout (planet missions): later buildings only remove
+   * the props standing on them, instead of reshaping the scenery every time something is built.
+   */
+  stableDressing?: boolean;
 }
 
 export const CELL = 4;
@@ -76,6 +83,7 @@ export class PlanetView implements View {
   private ctx: TerrainCtx;
   private scatter: THREE.Group | null = null;
   private dressKey = '';
+  private fixedDress: { roads: ReturnType<typeof roadSegments>; clearing: { x: number; y: number; r: number } | null } | null = null;
   private dressGen = 0;
   private disposables: { dispose(): void }[] = [];
   private unsubs: (() => void)[] = [];
@@ -84,6 +92,10 @@ export class PlanetView implements View {
   /** For views layered on top (ground battles). */
   get terrainMesh() { return this.terrain; }
   get surfaceInfo() { return this.surface; }
+  /** The scene object of a standing structure (planet missions restyle ruins). */
+  structureGroup(id: number): THREE.Group | null { return this.structures.get(id)?.group ?? null; }
+  /** Called after buildings are (re)synced with the colony. */
+  afterSync: (() => void) | null = null;
   private link: SurfaceLink;
 
   constructor(engine: Engine, link: SurfaceLink) {
@@ -338,16 +350,18 @@ export class PlanetView implements View {
     const key = c.structures.map((s) => `${s.building}${s.x},${s.y}`).join('|') + '#' + c.queue.map((q) => (q.kind === 'building' ? `${q.id}${q.x},${q.y}` : '')).join('|');
     if (key === this.dressKey) return;
     this.dressKey = key;
-    const roads = roadSegments(this.ctx, c);
-    paintSplat(this.terrain.geometry, this.ctx, roads, !!this.look.liquid);
+    const first = !this.fixedDress;
+    const roads = this.fixedDress?.roads ?? roadSegments(this.ctx, c);
+    if (first || !this.link.stableDressing) paintSplat(this.terrain.geometry, this.ctx, roads, !!this.look.liquid);
     const occ = occupancy(state, c);
     const w = this.surface.w;
     const gen = ++this.dressGen;
     const seed = (state.galaxy!.seed ^ Math.imul(c.systemId + 1, 2654435761) ^ (c.planetId * 97)) | 0;
     const n = Math.max(1, c.structures.length);
-    const clearing = c.structures.length
+    const clearing = this.fixedDress ? this.fixedDress.clearing : c.structures.length
       ? { x: c.structures.reduce((a, s) => a + s.x, 0) / n, y: c.structures.reduce((a, s) => a + s.y, 0) / n, r: 2 + Math.sqrt(n) }
       : null;
+    if (this.link.stableDressing && !this.fixedDress) this.fixedDress = { roads, clearing };
     buildScatter(this.planetType, this.ctx, MARGIN - 1, seed, (x, y) => occ[y * w + x] !== null, roads, clearing).then((g) => {
       if (this.disposed || gen !== this.dressGen) return disposeScatter(g);
       if (this.scatter) { this.root.remove(this.scatter); disposeScatter(this.scatter); }
@@ -394,6 +408,7 @@ export class PlanetView implements View {
     });
     for (const [k, site] of this.sites) if (!keys.has(k)) this.removeSite(site);
     this.onLinkChange();
+    this.afterSync?.();
   }
 
   private makeSite(key: string, b: BuildingId, x: number, y: number): SiteView | null {
@@ -495,7 +510,18 @@ export class PlanetView implements View {
     return { x: Math.round(fx - (f - 1) / 2), y: Math.round(fy - (f - 1) / 2) };
   }
 
-  private pickStructure(ray: THREE.Raycaster): number | null {
+  private blockerAt(b: BuildingId, x: number, y: number) {
+    return this.link.blocker ? this.link.blocker(b, x, y) : placeBlocker(this.engine.getState(), this.colony, b, x, y);
+  }
+
+  /** Cell under the pointer (fractional cell coords), for views layered on top. */
+  pointCell(ray: THREE.Raycaster): { x: number; y: number } | null {
+    const hit = ray.intersectObject(this.terrain, false)[0];
+    if (!hit) return null;
+    return { x: hit.point.x / CELL + (this.surface.w - 1) / 2, y: hit.point.z / CELL + (this.surface.h - 1) / 2 };
+  }
+
+  pickStructure(ray: THREE.Raycaster): number | null {
     const hits = ray.intersectObjects([...this.structures.values()].map((v) => v.hit), false);
     return hits.length ? (hits[0].object.userData.structureId as number) : null;
   }
@@ -506,7 +532,7 @@ export class PlanetView implements View {
     const cell = this.cellUnder(ray, placing);
     this.ghostCell = cell;
     if (!cell) { this.ghost.group.visible = false; return false; }
-    const ok = !placeBlocker(this.engine.getState(), this.colony, placing, cell.x, cell.y);
+    const ok = !this.blockerAt(placing, cell.x, cell.y);
     this.ghost.group.visible = true;
     this.ghost.group.position.copy(this.footprintCenter(placing, cell.x, cell.y));
     this.ghost.mat.uniforms.uColor.value.set(ok ? new THREE.Color(0.4, 2, 0.8) : new THREE.Color(2.4, 0.35, 0.3));
@@ -517,7 +543,7 @@ export class PlanetView implements View {
     const placing = this.link.getPlacing();
     if (placing) {
       const cell = this.cellUnder(ray, placing);
-      if (cell && !placeBlocker(this.engine.getState(), this.colony, placing, cell.x, cell.y)) this.link.place(placing, cell.x, cell.y);
+      if (cell && !this.blockerAt(placing, cell.x, cell.y)) this.link.place(placing, cell.x, cell.y);
       return;
     }
     this.link.setStructure(this.pickStructure(ray));

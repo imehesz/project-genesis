@@ -18,7 +18,9 @@ import type { UnitId } from '../engine/index.ts';
  * Either way the returned template faces +X, so GroundBattleView can steer it with rotation.y = -facing.
  */
 interface ModelConfig {
-  file: string;
+  /** A GLB in public/models/units, or `build` for procedural placeholder art. */
+  file?: string;
+  build?: () => THREE.Object3D;
   /** Static: world size of the largest axis. Rigged: world height. */
   size: number;
   rigged?: {
@@ -34,8 +36,11 @@ interface ModelConfig {
 }
 
 const CONFIG: Record<UnitId, ModelConfig> = {
-  infantry: { file: 'trooper.glb', size: 1.2, rigged: { height: 1.83, yaw: Math.PI / 2, walkSpeed: 8.25, tint: { M_Main: 'faction', M_Joints: '#24282e' } } },
+  infantry: { file: 'trooper.glb', size: 1.2, rigged: { height: 1.83, yaw: Math.PI / 2, walkSpeed: 4.65, tint: { M_Main: 'faction', M_Joints: '#24282e' } } },
+  // placeholder until the designers deliver a commander: the trooper, 10% bigger, gold joints
+  commander: { file: 'trooper.glb', size: 1.32, rigged: { height: 1.83, yaw: Math.PI / 2, walkSpeed: 4.65, tint: { M_Main: 'faction', M_Joints: '#d4a23c' } } },
   tank: { file: 'tank.glb', size: 2.55 },
+  tower: { file: 'tower.glb', size: 4.4 }, // Higgsfield tripo_3d, 2026-11-08
 };
 
 export interface UnitModel {
@@ -55,10 +60,18 @@ export function loadUnitModels(): Promise<Partial<Record<UnitId, UnitModel>>> {
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);
   const ids = Object.keys(CONFIG) as UnitId[];
+  const files = new Map<string, Promise<{ scene: THREE.Object3D; animations: THREE.AnimationClip[] }>>();
+  const load = (f: string) => {
+    if (!files.has(f)) files.set(f, loader.loadAsync(asset(`models/units/${f}`)));
+    // each unit kind gets its own copy (they are scaled and painted differently)
+    return files.get(f)!.then((g) => ({ scene: SkeletonUtils.clone(g.scene), animations: g.animations }));
+  };
   loading = Promise.all(
-    ids.map((id) =>
-      loader.loadAsync(asset(`models/units/${CONFIG[id].file}`)).then((g) => [id, build(g.scene, g.animations, CONFIG[id])] as const).catch(() => [id, null] as const),
-    ),
+    ids.map((id) => {
+      const c = CONFIG[id];
+      if (c.build) return Promise.resolve([id, { template: c.build(), clips: [], rigged: false, walkSpeed: 0, tint: {} } as UnitModel] as const);
+      return load(c.file!).then((g) => [id, build(g.scene, g.animations, c)] as const).catch(() => [id, null] as const);
+    }),
   ).then((p) => Object.fromEntries(p.filter(([, m]) => m)) as Partial<Record<UnitId, UnitModel>>);
   return loading;
 }

@@ -4,7 +4,7 @@ import { planetSurface, type Surface } from './surface.ts';
 
 export function surfaceOf(state: GameState, c: Colony): Surface {
   const p = state.galaxy!.systems[c.systemId].planets[c.planetId];
-  return planetSurface(state.galaxy!.seed, c.systemId, c.planetId, p.type, p.size);
+  return planetSurface(state.galaxy!.seed, c.systemId, c.planetId, p.type, p.size, p.mapSide);
 }
 
 export const buildingCount = (c: Colony, b: BuildingId) => c.structures.reduce((n, s) => n + (s.building === b ? 1 : 0), 0);

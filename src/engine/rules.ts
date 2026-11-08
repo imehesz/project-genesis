@@ -8,6 +8,8 @@ import { planAi } from './ai.ts';
 import { battleAuto, battleClose, battleEndRound, battleFire, battleMove, battleRetreat, resolveEncounters } from './battle.ts';
 import { FACTION_IDS } from './factions.ts';
 import { groundClose, groundOrder, groundRetreat, groundTick, invade } from './ground.ts';
+import { missionAfterOp, missionBriefed, missionEndTurn, missionLand, missionShipMove, newMission } from './mission.ts';
+import { opBuild, opCancelTrain, opClose, opConverter, opOrder, opRally, opRepair, opTick, opTrain } from './op.ts';
 
 export const CUBE_EVERY_CREDITS = 10;
 
@@ -28,8 +30,11 @@ export function applyCommand(state: GameState, cmd: Command, actor?: FactionId, 
         galaxy: generateGalaxy(cmd.seed),
       });
     case 'END_TURN':
-      if (state.battle || state.ground) return state; // finish the fight first
+      if (state.battle || state.ground || state.op) return state; // finish the fight first / no turns on a planet
+      if (state.mission) return missionEndTurn(state);
       return state.campaign ? runTurn(state) : { ...state, turn: state.turn + 1 };
+    case 'NEW_MISSION':
+      return newMission(cmd.id);
   }
   if (!who || !state.campaign) return state;
   switch (cmd.type) {
@@ -73,6 +78,28 @@ export function applyCommand(state: GameState, cmd: Command, actor?: FactionId, 
       return groundRetreat(state, who);
     case 'GROUND_CLOSE':
       return groundClose(state);
+    case 'MISSION_BRIEFED':
+      return missionBriefed(state);
+    case 'MISSION_SHIP_MOVE':
+      return missionShipMove(state, cmd.planetId);
+    case 'MISSION_LAND':
+      return missionLand(state, cmd.planetId);
+    case 'OP_ORDER':
+      return opOrder(state, who, cmd.ids, cmd.move, cmd.attack);
+    case 'OP_BUILD':
+      return opBuild(state, who, cmd.building, cmd.x, cmd.y);
+    case 'OP_REPAIR':
+      return opRepair(state, who, cmd.structureId);
+    case 'OP_TRAIN':
+      return opTrain(state, who, cmd.structureId, cmd.unit);
+    case 'OP_CANCEL_TRAIN':
+      return opCancelTrain(state, who, cmd.structureId, cmd.index);
+    case 'OP_CONVERTER':
+      return opConverter(state, who, cmd.on);
+    case 'OP_RALLY':
+      return opRally(state, who, cmd.structureId, cmd.at);
+    case 'OP_CLOSE':
+      return opClose(missionAfterOp(state));
   }
 }
 
@@ -124,5 +151,6 @@ function spawnCube(state: GameState): GameState {
 /** One fixed real-time simulation step. Ground-battle systems (movement, combat) will hook in here. */
 export function simulateTick(state: GameState): GameState {
   const next = { ...state, tick: state.tick + 1 };
+  if (next.op && !next.op.over) return opTick(next);
   return next.ground && !next.ground.over ? groundTick(next) : next;
 }

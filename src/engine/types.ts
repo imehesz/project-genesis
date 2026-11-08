@@ -7,6 +7,8 @@ import type { TechId } from './data/techs.ts';
 import type { ShipId } from './data/ships.ts';
 import type { Battle } from './battle.ts';
 import type { GroundBattle } from './ground.ts';
+import type { GroundOp } from './op.ts';
+import type { Mission } from './mission.ts';
 
 export type EntityId = number;
 
@@ -34,6 +36,8 @@ export interface Planet {
   size: number; // 1 (tiny) .. 5 (giant)
   /** Ownership marker. The colony's economy lives in GameState.colonies. */
   colony: { faction: FactionId; homeworld: boolean } | null;
+  /** Hand-set surface map side in cells (campaign planets); otherwise derived from size. */
+  mapSide?: number;
 }
 
 export interface StarSystem {
@@ -135,6 +139,10 @@ export interface GameState {
   battleQueue: { systemId: number; sides: [FactionId, FactionId] }[];
   /** A real-time planetary invasion in progress (runs on the engine's fixed tick). */
   ground: GroundBattle | null;
+  /** Story campaign progress (null in the open sandbox 4X game). */
+  mission: Mission | null;
+  /** A real-time planet mission in progress (campaign ground play: build, train, explore, fight). */
+  op: GroundOp | null;
   /** What happened to the player at the end of the last turn. */
   report: { turn: number; events: TurnEvent[] } | null;
   entities: Record<EntityId, Entity>;
@@ -170,4 +178,18 @@ export type Command =
   | { type: 'INVADE'; fleetId: FleetId; planetId: number }
   | { type: 'GROUND_ORDER'; ids: number[]; move?: { x: number; y: number }; attack?: number }
   | { type: 'GROUND_RETREAT' }
-  | { type: 'GROUND_CLOSE' };
+  | { type: 'GROUND_CLOSE' }
+  // ---- story campaign
+  | { type: 'NEW_MISSION'; id: 'c1' }
+  | { type: 'MISSION_BRIEFED' }
+  | { type: 'MISSION_SHIP_MOVE'; planetId: number }
+  | { type: 'MISSION_LAND'; planetId: number }
+  // ---- planet mission (real time)
+  | { type: 'OP_ORDER'; ids: number[]; move?: { x: number; y: number }; attack?: number }
+  | { type: 'OP_BUILD'; building: BuildingId; x: number; y: number }
+  | { type: 'OP_REPAIR'; structureId: number }
+  | { type: 'OP_TRAIN'; structureId: number; unit: 'infantry' | 'tank' }
+  | { type: 'OP_CANCEL_TRAIN'; structureId: number; index: number }
+  | { type: 'OP_CONVERTER'; on: boolean }
+  | { type: 'OP_RALLY'; structureId: number; at: { x: number; y: number } | null }
+  | { type: 'OP_CLOSE' };

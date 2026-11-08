@@ -39,6 +39,13 @@ export interface GroundUnit {
   repath: number;
   facing: number;
   alive: boolean;
+  /** Ticks without getting closer to the current waypoint, and the closest it got (crowd/corner unsticking). */
+  stall?: number;
+  wpd?: number;
+  /** Planet missions: combat experience (BAR-style, see op.ts) and the un-boosted stats it scales. */
+  xp?: number;
+  baseHp?: number;
+  baseCooldown?: number;
 }
 
 export interface Shot {
@@ -75,7 +82,7 @@ export function invadeBlocker(state: GameState, f: Fleet, planetId: number): str
   return null;
 }
 
-export function garrisonOf(c: Colony): Record<UnitId, number> {
+export function garrisonOf(c: Colony): { infantry: number; tank: number } {
   const terran = c.faction === 'terran' ? 1.5 : 1;
   const fab = c.structures.some((s) => s.building === 'fabricator') ? 1 : 0;
   return {
@@ -104,13 +111,13 @@ export function invade(state: GameState, actor: FactionId, fleetId: number, plan
   const anchor = free.reduce((b, i) => (d2(i, c0, s.w) < d2(b, c0, s.w) ? i : b), free[0]);
   const center: [number, number] = region.has(Math.round(c0[1]) * s.w + Math.round(c0[0])) ? c0 : [anchor % s.w, Math.floor(anchor / s.w)];
   const taken = new Set<number>();
-  const deploy = (faction: FactionId, kinds: Record<UnitId, number>, near: [number, number]) => {
+  const deploy = (faction: FactionId, kinds: Partial<Record<UnitId, number>>, near: [number, number]) => {
     const cells = free
       .filter((i) => !taken.has(i))
       .sort((a, b) => d2(a, near, s.w) - d2(b, near, s.w) || a - b);
     let k = 0;
     for (const kind of ['tank', 'infantry'] as UnitId[])
-      for (let n = 0; n < kinds[kind]; n++) {
+      for (let n = 0; n < (kinds[kind] ?? 0); n++) {
         const cell = cells[k++];
         if (cell === undefined) return;
         taken.add(cell);
@@ -124,7 +131,7 @@ export function invade(state: GameState, actor: FactionId, fleetId: number, plan
   };
   deploy(c.faction, garrisonOf(c), center);
   const lz = landingZone(s, center, free);
-  deploy(actor, { infantry: TRANSPORT_LOAD.infantry * transports, tank: TRANSPORT_LOAD.tank * transports }, lz);
+  deploy(actor, { infantry: (TRANSPORT_LOAD.infantry ?? 0) * transports, tank: (TRANSPORT_LOAD.tank ?? 0) * transports }, lz);
   for (const u of g.units) u.facing = Math.atan2(center[1] - u.y, center[0] - u.x);
 
   // the transports are spent landing the troops
@@ -143,7 +150,7 @@ function colonyCenter(c: Colony, s: Surface): [number, number] {
   return [x, y];
 }
 
-function largestRegion(s: Surface): number[] {
+export function largestRegion(s: Surface): number[] {
   const seen = new Set<number>();
   let best: number[] = [];
   s.kinds.forEach((k, i) => {
@@ -191,9 +198,13 @@ function flood(s: Surface, start: number): number[] {
 
 // ---------------------------------------------------------------- pathfinding
 
-const passable = (s: Surface, x: number, y: number) => x >= 0 && y >= 0 && x < s.w && y < s.h && s.kinds[y * s.w + x] === 'land';
+export const passable = (s: Surface, x: number, y: number) => x >= 0 && y >= 0 && x < s.w && y < s.h && s.kinds[y * s.w + x] === 'land';
 
-/** A* over land cells, 8-way without cutting corners. Returns cell waypoints (excluding the start). */
+/**
+ * A* over land cells, 8-way without cutting corners. Returns cell waypoints (excluding the start).
+ * If the target can't be reached (rocks, water, another island), the path leads to the reachable cell
+ * closest to it instead of nowhere, so a unit never just stands still on an order.
+ */
 export function findPath(s: Surface, sx: number, sy: number, tx: number, ty: number): [number, number][] {
   sx = Math.round(sx); sy = Math.round(sy); tx = Math.round(tx); ty = Math.round(ty);
   if (!passable(s, tx, ty)) {
@@ -234,9 +245,18 @@ export function findPath(s: Surface, sx: number, sy: number, tx: number, ty: num
         }
       }
   }
-  if (!came.has(goal) && goal !== start) return [];
+  let end = goal;
+  if (!came.has(goal) && goal !== start) {
+    // unreachable: settle for the explored cell nearest the target
+    let bd = Infinity;
+    for (const c of closed) {
+      const d = Math.hypot((c % w) - tx, Math.floor(c / w) - ty);
+      if (d < bd) [bd, end] = [d, c];
+    }
+    if (end === start) return [];
+  }
   const path: [number, number][] = [];
-  for (let c = goal; c !== start; c = came.get(c)!) path.push([c % w, Math.floor(c / w)]);
+  for (let c = end; c !== start; c = came.get(c)!) path.push([c % w, Math.floor(c / w)]);
   return path.reverse();
 }
 
@@ -329,11 +349,13 @@ export function groundTick(state: GameState): GameState {
   return { ...state, ground: g };
 }
 
-function step(u: GroundUnit) {
+export function step(u: GroundUnit) {
   let budget = u.speed * TICK_S;
   while (budget > 0 && u.path.length) {
     const [px, py] = u.path[0];
     const dx = px - u.x, dy = py - u.y, d = Math.hypot(dx, dy);
+    // close enough to a waypoint along the way: carry on to the next one (a crowd can sit on the exact spot)
+    if (u.path.length > 1 && d < 0.35) { u.path.shift(); u.wpd = undefined; continue; }
     u.facing = Math.atan2(dy, dx);
     if (d <= budget) {
       u.x = px; u.y = py;
@@ -348,16 +370,19 @@ function step(u: GroundUnit) {
 }
 
 /** Keep units from stacking on one spot (only nudges onto land). */
-function separate(units: GroundUnit[], s: Surface) {
+export function separate(units: GroundUnit[], s: Surface) {
   const R = 0.55;
   for (let i = 0; i < units.length; i++)
     for (let j = i + 1; j < units.length; j++) {
       const a = units[i], b = units[j];
       const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
       if (d >= R || d === 0) continue;
-      const push = (R - d) / 2, nx = dx / d, ny = dy / d;
-      if (passable(s, Math.round(a.x - nx * push), Math.round(a.y - ny * push))) { a.x -= nx * push; a.y -= ny * push; }
-      if (passable(s, Math.round(b.x + nx * push), Math.round(b.y + ny * push))) { b.x += nx * push; b.y += ny * push; }
+      // static units (towers) never get pushed; the mobile one takes the whole nudge
+      const ma = a.speed > 0, mb = b.speed > 0;
+      if (!ma && !mb) continue;
+      const push = (R - d) / (ma && mb ? 2 : 1), nx = dx / d, ny = dy / d;
+      if (ma && passable(s, Math.round(a.x - nx * push), Math.round(a.y - ny * push))) { a.x -= nx * push; a.y -= ny * push; }
+      if (mb && passable(s, Math.round(b.x + nx * push), Math.round(b.y + ny * push))) { b.x += nx * push; b.y += ny * push; }
     }
 }
 

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { sightOf, type Engine, type GameState, type GroundBattle, type GroundUnit, type UnitId } from '../../engine/index.ts';
+import { sightOf, xpRank, type Engine, type GameState, type GroundUnit, type Shot, type UnitId } from '../../engine/index.ts';
 import { FACTION_STYLE } from '../../theme.ts';
 import { PlanetView, type SurfaceLink } from './PlanetView.ts';
 import { instantiate, loadUnitModels, type UnitModel } from '../unitModels.ts';
@@ -19,6 +19,29 @@ export interface GroundLink {
 
 const DRAG_PX = 6;
 
+/** What a ground view draws: the units and shots of an invasion or of a planet mission. */
+export interface GroundScene { colonyId: string; units: GroundUnit[]; shots: Shot[]; tick: number }
+
+/** Where the view reads its units from, and the extras a planet mission adds. */
+export interface GroundSource {
+  get(s: GameState): GroundScene | null;
+  /** Placement + structure selection on the surface (planet missions). Default: battle mode, none. */
+  surface?: SurfaceLink;
+  /** Cell to open the camera over. Default: the invaders' landing zone. */
+  focus?: { x: number; y: number };
+  /** false hides a unit (fog of war). */
+  shows?(u: GroundUnit): boolean;
+}
+
+const battleSource: GroundSource = { get: (s) => s.ground };
+
+/** The ancient defences' colour (towers, their beams). */
+export const ANCIENT_COLOR = '#46ffd2';
+const SHOT_MINE = '#3fa9ff';
+const SHOT_ENEMY = '#ff3b30';
+/** The commander's selection ring. */
+const COMMANDER_COLOR = '#ffc95a';
+
 interface UnitView {
   id: number;
   kind: UnitId;
@@ -34,6 +57,7 @@ interface UnitView {
   maxHp: number;
   dead: number;
   anim: UnitAnim | null;
+  rank: number;
 }
 
 type AnimState = 'Idle' | 'Walk' | 'Shoot' | 'Hit' | 'Die';
@@ -74,10 +98,11 @@ export class GroundBattleView implements View {
   backdrop: boolean;
   fog: View['fog'];
   bloom = 0.3;
-  private planet: PlanetView;
-  private engine: Engine;
-  private link: GroundLink;
-  private units = new Map<number, UnitView>();
+  protected planet: PlanetView;
+  protected engine: Engine;
+  protected link: GroundLink;
+  protected src: GroundSource;
+  protected units = new Map<number, UnitView>();
   private models: Partial<Record<UnitId, UnitModel>> = {};
   private tinted = new Map<string, THREE.Material>();
   private rings: RangeRings | null = null;
@@ -88,23 +113,28 @@ export class GroundBattleView implements View {
   private fx: Fx[] = [];
   private keys = new Set<string>();
   private box: HTMLDivElement;
-  private marker: THREE.Mesh;
-  private markerT = 9;
+  protected marker: THREE.Mesh;
+  protected markerT = 9;
   private ringGeo = new THREE.RingGeometry(0.9, 1.25, 32);
   private hitGeo = new THREE.SphereGeometry(1.4, 8, 6);
   private hitMat = new THREE.MeshBasicMaterial({ visible: false });
   private unsubs: (() => void)[] = [];
   private disposed = false;
 
-  constructor(engine: Engine, link: GroundLink) {
+  constructor(engine: Engine, link: GroundLink, source: GroundSource = battleSource) {
     this.engine = engine;
     this.link = link;
-    const g = engine.getState().ground!;
-    this.planet = new PlanetView(engine, quietSurfaceLink(g.colonyId));
+    this.src = source;
+    const g = source.get(engine.getState())!;
+    this.planet = new PlanetView(engine, source.surface ?? quietSurfaceLink(g.colonyId));
     // open over the landing zone, close enough to read the troops
-    const lz = g.units.filter((u) => u.faction === g.attacker);
-    const cx = lz.reduce((n, u) => n + u.x, 0) / Math.max(1, lz.length), cy = lz.reduce((n, u) => n + u.y, 0) / Math.max(1, lz.length);
-    const w = this.planet.world(cx, cy);
+    let focus = source.focus;
+    if (!focus) {
+      const inv = engine.getState().ground;
+      const lz = g.units.filter((u) => u.faction === (inv?.attacker ?? link.player));
+      focus = { x: lz.reduce((n, u) => n + u.x, 0) / Math.max(1, lz.length), y: lz.reduce((n, u) => n + u.y, 0) / Math.max(1, lz.length) };
+    }
+    const w = this.planet.world(focus.x, focus.y);
     this.preset = { ...this.planet.preset, target: [w.x, 0, w.z], position: [w.x, 34, w.z + 30], minDistance: 8 };
     this.intro = this.planet.intro;
     this.backdrop = this.planet.backdrop;
@@ -128,34 +158,40 @@ export class GroundBattleView implements View {
       this.models = m;
       for (const v of this.units.values()) this.applyModel(v);
     });
-    this.unsubs.push(engine.subscribe((s, prev) => { if (s.ground && s.ground !== prev.ground) this.sync(s); }));
+    this.unsubs.push(engine.subscribe((s, prev) => { const a = this.src.get(s); if (a && a !== this.src.get(prev)) this.sync(s); }));
     this.unsubs.push(link.subscribe(() => this.paintSelection()));
   }
 
-  private toWorld(x: number, y: number, lift = 0) {
+  toWorld(x: number, y: number, lift = 0) {
     const w = this.planet.world(x, y);
     return new THREE.Vector3(w.x, this.planet.heightAt(x, y) + lift, w.z);
   }
 
+  private ringColor(v: { kind: UnitId; faction: string }) {
+    if (v.kind === 'tower') return new THREE.Color(ANCIENT_COLOR);
+    if (v.kind === 'commander') return new THREE.Color(COMMANDER_COLOR);
+    return new THREE.Color(FACTION_STYLE[v.faction as keyof typeof FACTION_STYLE].color);
+  }
+
   private addUnit(u: GroundUnit) {
-    const color = new THREE.Color(FACTION_STYLE[u.faction].color);
+    const color = this.ringColor(u);
     const group = new THREE.Group();
-    const ring = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: color.clone().multiplyScalar(1.4), transparent: true, opacity: 0.65, depthWrite: false }));
+    const ring = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: color.clone().multiplyScalar(1.1), transparent: true, opacity: 0.55, depthWrite: false }));
     ring.position.y = 0.12;
-    ring.scale.setScalar(u.kind === 'tank' ? 1.15 : 0.6);
+    ring.scale.setScalar(u.kind === 'tank' ? 1.15 : u.kind === 'tower' ? 1.3 : u.kind === 'commander' ? 0.68 : 0.6);
     const hit = new THREE.Mesh(this.hitGeo, this.hitMat);
-    hit.position.y = u.kind === 'tank' ? 0.8 : 0.6;
-    hit.scale.setScalar(u.kind === 'tank' ? 0.85 : 0.6); // a little generous so small troopers stay easy to click
+    hit.position.y = u.kind === 'tank' ? 0.8 : u.kind === 'tower' ? 1.8 : 0.6;
+    hit.scale.setScalar(u.kind === 'tank' ? 0.85 : u.kind === 'tower' ? 1.3 : 0.6); // a little generous so small troopers stay easy to click
     hit.userData.uid = u.id;
     const el = document.createElement('div');
-    el.className = `gbar ${u.faction === this.link.player ? 'is-mine' : ''}`;
-    el.style.setProperty('--fc', FACTION_STYLE[u.faction].color);
-    el.innerHTML = '<i></i>';
+    el.className = `gbar ${u.faction === this.link.player ? 'is-mine' : ''} ${u.kind === 'commander' ? 'is-commander' : ''}`;
+    el.style.setProperty('--fc', '#' + color.getHexString());
+    el.innerHTML = '<i></i><b class="gbar-rank"></b>';
     const bar = new CSS2DObject(el);
-    bar.position.y = u.kind === 'tank' ? 2.5 : 1.7;
+    bar.position.y = u.kind === 'tank' ? 2.5 : u.kind === 'tower' ? 4.6 : u.kind === 'commander' ? 1.9 : 1.7;
     group.add(ring, hit, bar);
     this.root.add(group);
-    const v: UnitView = { id: u.id, kind: u.kind, faction: u.faction, group, model: null, ring, hit, bar, pos: new THREE.Vector2(u.x, u.y), facing: u.facing, hp: u.hp, maxHp: u.maxHp, dead: 0, anim: null };
+    const v: UnitView = { id: u.id, kind: u.kind, faction: u.faction, group, model: null, ring, hit, bar, pos: new THREE.Vector2(u.x, u.y), facing: u.facing, hp: u.hp, maxHp: u.maxHp, dead: 0, anim: null, rank: 0 };
     this.units.set(u.id, v);
     this.applyModel(v);
     this.paintBar(v);
@@ -194,7 +230,7 @@ export class GroundBattleView implements View {
   private tint(mat: THREE.Material, faction: string, paint: Record<string, string>): THREE.Material {
     const how = paint[mat.name];
     if (!how) return mat;
-    const key = `${faction}/${mat.name}`;
+    const key = `${faction}/${mat.name}/${how}`;
     let t = this.tinted.get(key);
     if (!t) {
       const c = mat.clone() as THREE.MeshStandardMaterial;
@@ -234,28 +270,32 @@ export class GroundBattleView implements View {
   private paintBar(v: UnitView) {
     const el = v.bar.element;
     (el.firstChild as HTMLElement).style.width = `${(v.hp / v.maxHp) * 100}%`;
+    (el.lastChild as HTMLElement).textContent = '▲'.repeat(v.rank); // veteran chevrons
     const sel = this.link.getSelection().includes(v.id);
-    el.classList.toggle('show', sel || v.hp < v.maxHp);
+    el.classList.toggle('show', sel || v.hp < v.maxHp || v.rank > 0 || v.kind === 'commander');
   }
 
   private paintSelection() {
     const sel = new Set(this.link.getSelection());
     for (const v of this.units.values()) {
       const on = sel.has(v.id);
-      (v.ring.material as THREE.MeshBasicMaterial).opacity = on ? 1 : 0.55;
-      (v.ring.material as THREE.MeshBasicMaterial).color.set(on ? new THREE.Color(0.6, 2.4, 1.2) : new THREE.Color(FACTION_STYLE[v.faction as keyof typeof FACTION_STYLE].color).multiplyScalar(1.4));
+      (v.ring.material as THREE.MeshBasicMaterial).opacity = on ? 0.75 : 0.55;
+      (v.ring.material as THREE.MeshBasicMaterial).color.set(on ? new THREE.Color(0.4, 1.15, 0.65) : this.ringColor(v).multiplyScalar(1.1));
       this.paintBar(v);
     }
   }
 
-  private sync(s: GameState) {
-    const g = s.ground!;
+  protected sync(s: GameState) {
+    const g = this.src.get(s)!;
     const byId = new Map(g.units.map((u) => [u.id, u]));
+    for (const u of g.units) if (u.alive && !this.units.has(u.id)) this.addUnit(u); // freshly trained
     for (const v of this.units.values()) {
       const u = byId.get(v.id);
       if (!u) continue;
-      const hurt = u.hp < v.hp && u.alive;
+      const hurt = u.hp < v.hp && u.alive && u.maxHp === v.maxHp;
       v.hp = u.hp;
+      v.maxHp = u.maxHp;
+      v.rank = xpRank(u.xp ?? 0);
       v.facing = u.facing;
       if (!u.alive && !v.dead) { v.dead = 0.001; this.play(v, 'Die'); v.ring.visible = false; }
       // flinch only when standing; a running soldier just keeps running
@@ -264,7 +304,7 @@ export class GroundBattleView implements View {
     }
     for (const shot of g.shots) {
       if (shot.tick <= this.lastShot) continue;
-      this.shot(shot.from, shot.to, shot.kill, g);
+      this.shot(shot.from, shot.to, shot.kill);
     }
     this.lastShot = g.tick;
     // drop dead units from the selection
@@ -274,18 +314,19 @@ export class GroundBattleView implements View {
   }
 
 
-  private shot(from: number, to: number, kill: boolean, g: GroundBattle) {
+  private shot(from: number, to: number, kill: boolean) {
     const a = this.units.get(from), b = this.units.get(to);
     if (!a || !b) return;
-    const big = a.kind === 'tank';
-    const color = new THREE.Color(FACTION_STYLE[a.faction as keyof typeof FACTION_STYLE].color).multiplyScalar(3);
-    let p0 = this.toWorld(a.pos.x, a.pos.y, big ? 1.2 : 0.8);
+    const big = a.kind === 'tank' || a.kind === 'tower';
+    // who is shooting reads at a glance: the player's shots are blue, every enemy's are red
+    const color = new THREE.Color(a.faction === this.link.player ? SHOT_MINE : SHOT_ENEMY).multiplyScalar(3);
+    let p0 = this.toWorld(a.pos.x, a.pos.y, a.kind === 'tower' ? 3.7 : big ? 1.2 : 0.8);
     if (a.anim) {
       if (a.anim.state !== 'Walk' && a.anim.state !== 'Die') this.play(a, 'Shoot', true);
       // barrel tip of the pistol (its barrel runs along local -X from the grip)
       if (a.anim.gun) { a.model!.updateMatrixWorld(true); p0 = a.anim.gun.localToWorld(new THREE.Vector3(-0.4, 0.1, 0)); }
     }
-    const p1 = this.toWorld(b.pos.x, b.pos.y, b.kind === 'tank' ? 0.9 : 0.6);
+    const p1 = this.toWorld(b.pos.x, b.pos.y, b.kind === 'tank' ? 0.9 : b.kind === 'tower' ? 2 : 0.6);
     const geo = new THREE.BufferGeometry().setFromPoints([p0, p1]);
     const mat = new THREE.LineBasicMaterial({ color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
     const line = new THREE.Line(geo, mat);
@@ -302,14 +343,13 @@ export class GroundBattleView implements View {
     if (kill) {
       const boom = this.sprite(new THREE.Color(3, 1.5, 0.5), p1, 1);
       this.root.add(boom);
-      const size = b.kind === 'tank' ? 7 : 3;
+      const size = b.kind === 'tank' ? 7 : b.kind === 'tower' ? 11 : 3;
       this.fx.push({
         obj: boom, t: 0, life: 0.8,
         update: (k) => { boom.scale.setScalar(size * (0.3 + k)); (boom.material as THREE.SpriteMaterial).opacity = 1 - k; },
         dispose: () => (boom.material as THREE.Material).dispose(),
       });
     }
-    void g;
   }
 
   private sprite(color: THREE.Color, at: THREE.Vector3, size: number) {
@@ -321,8 +361,8 @@ export class GroundBattleView implements View {
 
   // ------------------------------------------------------------ input
 
-  private pickUnit(ray: THREE.Raycaster): number | null {
-    const hits = ray.intersectObjects([...this.units.values()].filter((v) => !v.dead).map((v) => v.hit), false);
+  protected pickUnit(ray: THREE.Raycaster): number | null {
+    const hits = ray.intersectObjects([...this.units.values()].filter((v) => !v.dead && v.group.visible).map((v) => v.hit), false);
     return hits.length ? (hits[0].object.userData.uid as number) : null;
   }
 
@@ -421,7 +461,7 @@ export class GroundBattleView implements View {
     const { dt } = ctx;
     this.planet.update(ctx);
 
-    const g = this.engine.getState().ground;
+    const g = this.src.get(this.engine.getState());
     const byId = new Map((g?.units ?? []).map((u) => [u.id, u]));
     const lerp = 1 - Math.exp(-dt * 14);
     for (const [id, v] of [...this.units]) {
@@ -429,7 +469,9 @@ export class GroundBattleView implements View {
       if (u) v.pos.lerp(new THREE.Vector2(u.x, u.y), lerp);
       const p = this.toWorld(v.pos.x, v.pos.y, v.kind === 'tank' ? 0.35 : 0);
       v.group.position.copy(p);
-      if (v.model && !v.dead) {
+      if (u && this.src.shows) v.group.visible = v.dead > 0 || this.src.shows(u);
+      if (v.kind === 'tower' && v.model && !v.dead) { const c = v.model.getObjectByName('crystal'); if (c) { c.rotation.y = ctx.t * 0.8; c.position.y = 3.7 + Math.sin(ctx.t * 1.6 + id) * 0.12; } }
+      if (v.model && !v.dead && v.kind !== 'tower') {
         const want = -v.facing;
         let cur = v.model.rotation.y;
         const diff = Math.atan2(Math.sin(want - cur), Math.cos(want - cur));
@@ -481,7 +523,7 @@ export class GroundBattleView implements View {
    * reads as "where this group can shoot / will notice enemies". Rebuilt only when the selection moves.
    */
   private updateRings() {
-    const g = this.engine.getState().ground;
+    const g = this.src.get(this.engine.getState());
     const byId = new Map((g?.units ?? []).map((u) => [u.id, u]));
     const sel = this.link.getSelection().filter((id) => byId.get(id)?.alive && this.units.has(id)).sort((x, y) => x - y);
     const circles = sel.map((id) => {

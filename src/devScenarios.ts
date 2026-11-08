@@ -1,4 +1,4 @@
-import { engine, useUi } from './store/gameStore.ts';
+import { engine, landOn, startStoryCampaign, useUi } from './store/gameStore.ts';
 import * as E from './engine/index.ts';
 import { addShips, applyCommand, createInitialState, resolveEncounters } from './engine/index.ts';
 
@@ -10,6 +10,20 @@ export function runDevScenario() {
   if (!import.meta.env.DEV) return;
   Object.assign(((window as unknown as Record<string, object>).__pg ??= {}), { engine, useUi, E }); // poke at it from devtools / demo recorder
   const scenario = new URLSearchParams(location.search).get('scenario');
+  // story campaign: ?scenario=c1 opens the star system, ?scenario=c1-land lands on planet 1 (&reveal=1 lifts the fog)
+  if (scenario === 'c1' || scenario === 'c1-land') {
+    startStoryCampaign();
+    if (scenario === 'c1') { useUi.getState().go({ name: 'system' }); return; }
+    engine.dispatch({ type: 'MISSION_BRIEFED' });
+    engine.dispatch({ type: 'MISSION_SHIP_MOVE', planetId: 0 });
+    engine.dispatch({ type: 'END_TURN' });
+    landOn(0);
+    if (new URLSearchParams(location.search).get('reveal') === '1') {
+      const s = engine.getState();
+      engine.load({ ...s, op: { ...s.op!, explored: s.op!.explored.map(() => 1), visible: s.op!.visible.map(() => 1) } });
+    }
+    return;
+  }
   if (scenario === 'ground') {
     let s = applyCommand(createInitialState(), { type: 'NEW_CAMPAIGN', seed: 4242, faction: 'terran' });
     const target = Object.values(s.colonies).find((c) => c.faction === 'saurian')!;

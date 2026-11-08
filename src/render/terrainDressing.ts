@@ -263,7 +263,8 @@ export async function buildScatter(
   const group = new THREE.Group();
   const s = ctx.surface;
   const placements = new Map<string, THREE.Matrix4[]>();
-  const rnd = mulberry(seed);
+  // every cell has its own random stream: blocking one cell (a new building) never reshuffles the rest
+  let rnd = mulberry(seed);
   const pick = (table: [string, number][]) => {
     let r = rnd() * table.reduce((n, [, w]) => n + w, 0);
     for (const [name, w] of table) if ((r -= w) <= 0) return name;
@@ -275,7 +276,8 @@ export async function buildScatter(
     for (let cx = -margin; cx < s.w + margin; cx++) {
       const inside = cx >= 0 && cy >= 0 && cx < s.w && cy < s.h;
       const kind = inside ? s.kinds[cy * s.w + cx] : 'rough';
-      if (kind === 'liquid' || (inside && kind === 'land' && blocked(cx, cy))) { rnd(); continue; }
+      rnd = mulberry((seed ^ Math.imul(cx + 1013, 73856093) ^ Math.imul(cy + 2029, 19349663)) | 0);
+      if (kind === 'liquid' || (inside && kind === 'land' && blocked(cx, cy))) continue;
       const table = kind === 'land' ? b.land : b.rough;
       let n = kind === 'land' ? b.landDensity : b.roughDensity;
       if (!inside) n *= 0.8;

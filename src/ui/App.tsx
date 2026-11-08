@@ -9,6 +9,8 @@ import { GalaxyHud } from './GalaxyHud.tsx';
 import { BattleHud } from './BattleHud.tsx';
 import { GroundHud } from './GroundHud.tsx';
 import { ControlsHelp } from './ControlsHelp.tsx';
+import { MissionHud } from './MissionHud.tsx';
+import { OpHud } from './OpHud.tsx';
 
 const STRATEGIC = new Set(['galaxy', 'colony', 'research', 'surface']);
 
@@ -41,7 +43,7 @@ export function App() {
   return (
     <>
       <GameCanvas
-        view={screen.name === 'sandbox' ? 'sandbox' : screen.name === 'surface' ? 'surface' : screen.name === 'battle' ? 'battle' : screen.name === 'ground' ? 'ground' : STRATEGIC.has(screen.name) ? 'galaxy' : null}
+        view={screen.name === 'sandbox' ? 'sandbox' : screen.name === 'surface' ? 'surface' : screen.name === 'battle' ? 'battle' : screen.name === 'ground' ? 'ground' : screen.name === 'system' ? 'system' : screen.name === 'op' ? 'op' : STRATEGIC.has(screen.name) ? 'galaxy' : null}
         colonyId={screen.name === 'surface' ? screen.colonyId : undefined}
       />
       <audio ref={music} src={asset('audio/menu-theme.m4a')} loop preload="auto" />
@@ -54,7 +56,9 @@ export function App() {
         {STRATEGIC.has(screen.name) && <GalaxyHud />}
         {screen.name === 'battle' && <BattleHud />}
         {screen.name === 'ground' && <GroundHud />}
-        {(STRATEGIC.has(screen.name) || screen.name === 'battle' || screen.name === 'ground') && <ControlsHelp />}
+        {screen.name === 'system' && <MissionHud />}
+        {screen.name === 'op' && <OpHud />}
+        {(STRATEGIC.has(screen.name) || ['battle', 'ground', 'system', 'op'].includes(screen.name)) && <ControlsHelp />}
       </div>
     </>
   );

@@ -22,12 +22,12 @@ export const surfaceSide = (planetSize: number) => Math.round(SURFACE_SCALE * (5
 const cache = new Map<string, Surface>();
 
 /** Deterministic surface map of one planet: same galaxy seed + planet = same terrain, everywhere. */
-export function planetSurface(seed: number, systemId: number, planetId: number, type: PlanetType, size: number): Surface {
-  const key = `${seed}:${systemId}:${planetId}`;
+export function planetSurface(seed: number, systemId: number, planetId: number, type: PlanetType, size: number, side?: number): Surface {
+  const key = `${seed}:${systemId}:${planetId}:${side ?? ''}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const r = makeRng((seed ^ Math.imul(systemId + 1, 73856093) ^ Math.imul(planetId + 1, 19349663)) | 0);
-  const w = surfaceSide(size), h = w;
+  const w = side ?? surfaceSide(size), h = w;
   // feature size grows with the map, so big maps get big lakes and ridges, not just more noise
   const elev = noiseField(r, w, h, Math.max(3, w / 4));
   const rough = noiseField(r, w, h, Math.max(2, w / 6));
